@@ -1,3 +1,4 @@
+import pickle
 import random
 import numpy as np
 from engine import Value
@@ -74,6 +75,8 @@ class Layer:
 
 
 class MLP:
+    PATH_TO_NETWORKS = "runtime_saves/neural_networks/"
+
     def __init__(self, layout: np.ndarray, use_relu: list):
         # Neural Network layout may only be a 1-D array
         if layout.ndim != 1:
@@ -99,3 +102,12 @@ class MLP:
     def zero_grad(self):
         for layer in self.layers:
             layer.zero_grad()
+
+    def save_to_file(self, name: str):
+        file = open(MLP.PATH_TO_NETWORKS + name, "wb")
+        pickle.dump(self, file)
+
+    @staticmethod
+    def get_from_file(name):
+        file = open(MLP.PATH_TO_NETWORKS + name, "wb")
+        return pickle.load(file)

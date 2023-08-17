@@ -16,6 +16,9 @@ class Value:
     def __str__(self):
         return f'Value({self.data}, Label: {self.label})'
 
+    def __repr__(self):
+        return f'Value({self.data}, Label: {self.label})'
+
     def __allchildren(self) -> list:
         queue = [self]
         children = []
@@ -50,10 +53,11 @@ class Value:
             for j in i.children:
                 dot.edge(str(j.__hash__()), str(i.__hash__()) + i.op)
 
-        dot.render(directory="venv/Lib/Graphs", view=True)
+        dot.render(directory="runtime_saves/graphs", view=True)
 
     def softmax(self, x):
         # https://youtu.be/KpKog-L9veg?si=VhpMKIitEKhba-rm - Source
+
         x_exp = np.array([math.exp(x[i].data) for i in range(x.size)])
         x_exp_sum = np.sum(x_exp)
         predicted = math.exp(self.data) / x_exp_sum
