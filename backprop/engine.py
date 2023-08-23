@@ -12,6 +12,18 @@ class Value:
         self.label = label
         self.grad = 0
         self.__backward = lambda: None
+        self.__calc = lambda: None
+
+    def __getstate__(self):
+        self.__backward = None
+        self.__calc = None
+        return self.__dict__
+
+    def __setstate__(self, state):
+        self.__dict__ = state
+        self.__backward = lambda: None
+        self.__calc = lambda: None
+
 
     def __str__(self):
         return f'Value({self.data}, Label: {self.label})'
@@ -22,7 +34,8 @@ class Value:
     def __allchildren(self) -> list:
         queue = [self]
         children = []
-        alr_queued = {self}
+        alr_queued = set()
+        alr_queued.add(self)
         while len(queue) > 0:
             current_val = queue.pop(0)
             children.append(current_val)
@@ -36,6 +49,17 @@ class Value:
         allchildren = self.__allchildren()
         for i in allchildren:
             i.__backward()
+
+    def recalc(self):
+        allchildren = self.__allchildren()
+        allchildren.reverse()
+        for i in allchildren:
+            i.__calc()
+
+    def zero_grad(self):
+        allchildren = self.__allchildren()
+        for i in allchildren:
+            i.grad = 0
 
     def draw(self, name=""):
         dot = graphviz.Digraph(name, format="pdf", graph_attr={'rankdir': 'LR', 'label': name})
@@ -55,15 +79,24 @@ class Value:
 
         dot.render(directory="runtime_saves/graphs", view=True)
 
-    def softmax(self, x):
+    def softmax(self, neuron_layer):
         # https://youtu.be/KpKog-L9veg?si=VhpMKIitEKhba-rm - Source
-
-        x_exp = np.array([math.exp(x[i].data) for i in range(x.size)])
-        x_exp_sum = np.sum(x_exp)
-        predicted = math.exp(self.data) / x_exp_sum
-
-        out = Value(predicted, op="Softmax")
+        out = Value(0, op="Softmax")
         out.children = [self]
+
+        def calc():
+            try:
+                neuron_layer_exp = np.array([math.exp(neuron_layer[i].data) for i in range(neuron_layer.size)])
+            except OverflowError:
+                print(neuron_layer)
+                quit()
+
+
+            neuron_layer_exp_sum = np.sum(neuron_layer_exp)
+            predicted = math.exp(self.data) / neuron_layer_exp_sum
+            out.data = predicted
+        calc()
+        out.__calc = calc
 
         def backward():
             # self.grad += (predicted * (1 - predicted)) * out.grad
@@ -78,16 +111,21 @@ class Value:
     def cross_entropy_loss(y_labels: np.ndarray, y_predictions: np.ndarray):
         # https://shivammehta25.github.io/posts/deriving-categorical-cross-entropy-and-softmax/ - Source
         softmaxed_predictions = np.array([x.softmax(y_predictions) for x in y_predictions])
-        y_predictions_data = np.array([pred.data for pred in softmaxed_predictions])
-
-        loss = -np.sum(y_labels * np.array([math.log(pred) for pred in y_predictions_data]))
-
-        out = Value(loss, op="CrossEntropyLoss")
+        out = Value(0, op="CrossEntropyLoss")
         out.children = softmaxed_predictions.tolist()
 
+        def calc():
+            softmaxed_predictions_data = np.array([pred.data for pred in softmaxed_predictions])
+            y_labels_data = np.array([label.data for label in y_labels])
+            loss = -np.sum(y_labels_data * np.array([math.log(pred) for pred in softmaxed_predictions_data]))
+            out.data = loss
+        calc()
+        out.__calc = calc
+
         def backward():
-            for i in range(len(y_predictions_data)):
-                y_predictions[i].grad += (y_predictions_data[i] - y_labels[i]) * out.grad
+            softmaxed_predictions_data = np.array([pred.data for pred in softmaxed_predictions])
+            for i in range(len(softmaxed_predictions_data)):
+                y_predictions[i].grad += (softmaxed_predictions_data[i] - y_labels[i].data) * out.grad
 
         out.__backward = backward
         return out
@@ -95,6 +133,11 @@ class Value:
     def relu(self):
         out = Value(max(0, self.data), op="ReLu")
         out.children = [self]
+
+        def calc():
+            out.data = max(0, self.data)
+
+        out.__calc = calc
 
         def backward():
             self.grad += (0 if self.data < 0 else 1) * out.grad
@@ -105,6 +148,10 @@ class Value:
     def exp(self):
         out = Value(math.exp(self.data), op="exp")
         out.children = [self]
+
+        def calc():
+            out.data = math.exp(self.data)
+        out.__calc = calc
 
         def backward():
             self.grad += out.data * out.grad
@@ -119,6 +166,10 @@ class Value:
 
         out = Value(self.data + other.data, "+")
         out.children = np.array([self, other])
+
+        def calc():
+            out.data = self.data + other.data
+        out.__calc = calc
 
         def backward():
             self.grad += out.grad
@@ -135,6 +186,10 @@ class Value:
         out = Value(self.data * other.data, "*")
         out.children = np.array([self, other])
 
+        def calc():
+            out.data = self.data * other.data
+        out.__calc = calc
+
         def backward():
             self.grad += other.data * out.grad
             other.grad += self.data * out.grad
@@ -149,6 +204,10 @@ class Value:
 
         out = Value(self.data ** power.data, f"**{str(power.data)}|{power.label}")
         out.children = np.array([self])
+
+        def calc():
+            out.data = self.data ** power.data
+        out.__calc = calc
 
         def backward():
             self.grad += power.data * (self.data ** (power.data - 1)) * out.grad

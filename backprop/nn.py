@@ -25,6 +25,9 @@ class Neuron:
             else:
                 for i in range(out.size):
                     out[i] = out[i].relu()
+        if (-784 > out.data) or (out.data > 784):
+            print(f"w[{str(self.li)}][{str(self.ni)}] = {out.data}")
+
         return out
 
     def learn(self, alpha):
@@ -42,7 +45,6 @@ class Neuron:
         for i in range(self.weights.size):
             s += "w[%d]: %.04f; " % (i, self.weights[i].data)
         s += "b: %0.4f; " % (self.bias.data)
-
 
     def __str__(self):
         return "Neuron[%d]: [%s]" % (self.ni, self.__params())
@@ -76,6 +78,7 @@ class Layer:
 
 class MLP:
     PATH_TO_NETWORKS = "runtime_saves/neural_networks/"
+    current_training_step = 0
 
     def __init__(self, layout: np.ndarray, use_relu: list):
         # Neural Network layout may only be a 1-D array
@@ -108,6 +111,6 @@ class MLP:
         pickle.dump(self, file)
 
     @staticmethod
-    def get_from_file(name):
-        file = open(MLP.PATH_TO_NETWORKS + name, "wb")
+    def load_from_file(name):
+        file = open(MLP.PATH_TO_NETWORKS + name, "rb")
         return pickle.load(file)

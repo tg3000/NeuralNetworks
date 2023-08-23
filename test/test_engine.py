@@ -59,7 +59,7 @@ class TestValueMethods(unittest.TestCase):
 
         softmaxes = np.array([inp.softmax(inps) for inp in inps])
 
-        loss = Value.cross_entropy_loss(np.array([1.0, 0.0]), inps)
+        loss = Value.cross_entropy_loss(np.array([Value(1.0), Value(0.0)]), inps)
         loss.grad = 1
         loss.backward()
 
