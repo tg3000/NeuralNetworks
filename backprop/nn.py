@@ -5,32 +5,24 @@ from engine import Value
 
 
 class Neuron:
-    def __init__(self, inputs: int, neuronindex: int, layerindex: int, use_relu):
+    def __init__(self, inputs: int, neuronindex: int, layerindex: int, use_tanh):
         self.li = layerindex
         self.ni = neuronindex
         self.inputs = inputs
-        self.use_relu = use_relu
+        self.use_tanh = use_tanh
 
         # Initialize Weights and Biases
-        self.weights = np.array(
-            [Value(random.uniform(-1, 1), label=f"w[{str(self.li)}][{str(self.ni)}][{str(i)}]") for i in range(inputs)])
-        self.bias = Value(random.uniform(-1, 1), label=f"b[{str(self.li)}][{str(self.ni)}]")
+        self.weights = [Value(random.uniform(-1, 1), label=f"w[{str(self.li)}][{str(self.ni)}][{str(i)}]") for i in range(inputs)]
+        self.bias = Value(0, label=f"b[{str(self.li)}][{str(self.ni)}]")
 
     def __call__(self, x):
-        out = np.sum(np.multiply(x, self.weights))
-        out = out + self.bias
-        if self.use_relu:
-            if isinstance(out, Value):
-                out = out.relu()
-            else:
-                for i in range(out.size):
-                    out[i] = out[i].relu()
-        if (-784 > out.data) or (out.data > 784):
-            print(f"w[{str(self.li)}][{str(self.ni)}] = {out.data}")
 
+        out = sum([wi * xi for wi, xi in zip(self.weights, x)], self.bias)
+        if self.use_tanh:
+            out = out.tanh()
         return out
 
-    def learn(self, alpha):
+    def apply_grad(self, alpha):
         for w in self.weights:
             w.data += -alpha * w.grad
         self.bias.data += -alpha * self.bias.grad
@@ -44,32 +36,29 @@ class Neuron:
         s = ""
         for i in range(self.weights.size):
             s += "w[%d]: %.04f; " % (i, self.weights[i].data)
-        s += "b: %0.4f; " % (self.bias.data)
+        s += "b: %0.4f; " % self.bias.data
 
     def __str__(self):
         return "Neuron[%d]: [%s]" % (self.ni, self.__params())
 
 
 class Layer:
-    def __init__(self, neurons: int, ins: int, layerindex: int, use_relu):
+    def __init__(self, neurons: int, ins: int, layerindex: int, use_tanh):
         self.li = layerindex
-        self.use_relu = use_relu
+        self.use_tanh = use_tanh
 
-        self.neurons = np.array([Neuron(ins, i, layerindex, use_relu) for i in range(neurons)])
+        self.neurons = [Neuron(ins, i, layerindex, use_tanh) for i in range(neurons)]
 
     def __call__(self, x):
-        if self.li == 0:
-            out = np.array([n(x_single) for x_single, n in zip(x, self.neurons)])
-        else:
-            out = np.array([n(x) for n in self.neurons])
+        out = [n(x) for n in self.neurons]
         return out
 
     def __str__(self):
         return
 
-    def learn(self, alpha):
+    def apply_grad(self, alpha):
         for neuron in self.neurons:
-            neuron.learn(alpha)
+            neuron.apply_grad(alpha)
 
     def zero_grad(self):
         for neuron in self.neurons:
@@ -80,27 +69,22 @@ class MLP:
     PATH_TO_NETWORKS = "runtime_saves/neural_networks/"
     current_training_step = 0
 
-    def __init__(self, layout: np.ndarray, use_relu: list):
-        # Neural Network layout may only be a 1-D array
-        if layout.ndim != 1:
-            print("We only accept 1-D arrays as layouts for NNs")
-            return
-
+    def __init__(self, inputs, layout: list, use_tanh: list):
         # Init Layers
-        l = [Layer(layout[0], 1, 0, use_relu[0])]
-        for i in range(1, layout.size):
-            l.append(Layer(layout[i], layout[i - 1], i, use_relu[i]))
-        self.layers = np.array(l)
+        layers = [Layer(layout[0], inputs, 0, use_tanh[0])]
+        for i in range(1, len(layout)):
+            layers.append(Layer(layout[i], layout[i - 1], i, use_tanh[i]))
+        self.layers = layers
 
-    def __call__(self, x):
+    def __call__(self, x: list):
         out = x
         for layer in self.layers:
             out = layer(out)
         return out
 
-    def learn(self, alpha=0.1):
+    def apply_grad(self, alpha=0.1):
         for layer in self.layers:
-            layer.learn(alpha)
+            layer.apply_grad(alpha)
 
     def zero_grad(self):
         for layer in self.layers:
@@ -111,6 +95,6 @@ class MLP:
         pickle.dump(self, file)
 
     @staticmethod
-    def load_from_file(name):
+    def load_from_file(name: str):
         file = open(MLP.PATH_TO_NETWORKS + name, "rb")
         return pickle.load(file)

@@ -7,7 +7,7 @@ class Value:
     def __init__(self, val, op="", label=""):
         self.data = val
         self.grad = 0
-        self.children = np.empty((0, 0))
+        self.children = []
         self.op = op
         self.label = label
         self.grad = 0
@@ -23,7 +23,6 @@ class Value:
         self.__dict__ = state
         self.__backward = lambda: None
         self.__calc = lambda: None
-
 
     def __str__(self):
         return f'Value({self.data}, Label: {self.label})'
@@ -79,53 +78,47 @@ class Value:
 
         dot.render(directory="runtime_saves/graphs", view=True)
 
-    def softmax(self, neuron_layer):
-        # https://youtu.be/KpKog-L9veg?si=VhpMKIitEKhba-rm - Source
-        out = Value(0, op="Softmax")
+    def tanh(self):
+        x = self.data
+        t = (math.exp(2 * x) - 1) / (math.exp(2 * x) + 1)
+        out = Value(t, "tanh")
         out.children = [self]
 
-        def calc():
-            try:
-                neuron_layer_exp = np.array([math.exp(neuron_layer[i].data) for i in range(neuron_layer.size)])
-            except OverflowError:
-                print(neuron_layer)
-                quit()
+        def _backward():
+            self.grad += (1 - t ** 2) * out.grad
 
-
-            neuron_layer_exp_sum = np.sum(neuron_layer_exp)
-            predicted = math.exp(self.data) / neuron_layer_exp_sum
-            out.data = predicted
-        calc()
-        out.__calc = calc
-
-        def backward():
-            # self.grad += (predicted * (1 - predicted)) * out.grad
-            # pytorch doesn't have backward for softmax but does make up for it in cross_entropy_loss
-            self.grad += out.grad
-
-        out.__backward = backward
+        out._backward = _backward
         return out
+
+    def __softmax(self, neuron_layer: list):
+        # https://youtu.be/KpKog-L9veg?si=VhpMKIitEKhba-rm - Source
+        neuron_layer_exp = [math.exp(neuron_layer[i].data) for i in range(len(neuron_layer))]
+        neuron_layer_exp_sum = sum(neuron_layer_exp)
+        predicted = math.exp(self.data) / neuron_layer_exp_sum
+        return predicted
 
     @staticmethod
     # Do not Softmax y_predicitions as method already does this
-    def cross_entropy_loss(y_labels: np.ndarray, y_predictions: np.ndarray):
+    def cross_entropy_loss(y_labels: list, y_predictions: list):
         # https://shivammehta25.github.io/posts/deriving-categorical-cross-entropy-and-softmax/ - Source
-        softmaxed_predictions = np.array([x.softmax(y_predictions) for x in y_predictions])
         out = Value(0, op="CrossEntropyLoss")
-        out.children = softmaxed_predictions.tolist()
+        out.children = y_predictions
 
         def calc():
-            softmaxed_predictions_data = np.array([pred.data for pred in softmaxed_predictions])
+            softmaxed_predictions = [x.__softmax(y_predictions) for x in y_predictions]
+
             y_labels_data = np.array([label.data for label in y_labels])
-            loss = -np.sum(y_labels_data * np.array([math.log(pred) for pred in softmaxed_predictions_data]))
+            loss = -1 * np.sum(y_labels_data * np.array([math.log(pred) for pred in softmaxed_predictions]))
             out.data = loss
+
         calc()
         out.__calc = calc
 
         def backward():
-            softmaxed_predictions_data = np.array([pred.data for pred in softmaxed_predictions])
-            for i in range(len(softmaxed_predictions_data)):
-                y_predictions[i].grad += (softmaxed_predictions_data[i] - y_labels[i].data) * out.grad
+            softmaxed_predictions = [x.__softmax(y_predictions) for x in y_predictions]
+
+            for i in range(len(softmaxed_predictions)):
+                y_predictions[i].grad += (softmaxed_predictions[i] - y_labels[i].data) * out.grad
 
         out.__backward = backward
         return out
@@ -151,6 +144,7 @@ class Value:
 
         def calc():
             out.data = math.exp(self.data)
+
         out.__calc = calc
 
         def backward():
@@ -165,10 +159,11 @@ class Value:
             other = Value(other)
 
         out = Value(self.data + other.data, "+")
-        out.children = np.array([self, other])
+        out.children = [self, other]
 
         def calc():
             out.data = self.data + other.data
+
         out.__calc = calc
 
         def backward():
@@ -184,10 +179,11 @@ class Value:
             other = Value(other)
 
         out = Value(self.data * other.data, "*")
-        out.children = np.array([self, other])
+        out.children = [self, other]
 
         def calc():
             out.data = self.data * other.data
+
         out.__calc = calc
 
         def backward():
@@ -203,10 +199,11 @@ class Value:
             power = Value(power)
 
         out = Value(self.data ** power.data, f"**{str(power.data)}|{power.label}")
-        out.children = np.array([self])
+        out.children = [self]
 
         def calc():
             out.data = self.data ** power.data
+
         out.__calc = calc
 
         def backward():
@@ -225,13 +222,13 @@ class Value:
         return self * -1
 
     def __sub__(self, other):
-        return self + -other
+        return self + (-other)
 
     def __rsub__(self, other):
-        return -self + other
+        return other + (-self)
 
     def __truediv__(self, other):
         return self * (other ** -1)
 
     def __rtruediv__(self, other):
-        return self * (other ** -1)
+        return other * (self ** -1)
